@@ -1,55 +1,37 @@
-# Draft for Psychtoolbox Discourse
+# Psychtoolbox Discourse
 
-Paste the title and the body below as a new topic. Suggested category: the general or hardware forum, not a help request. Post it after this file is on GitHub, so the image links resolve.
+Posted: https://psychtoolbox.discourse.group/t/visual-and-auditory-jitter-under-1-ms-light-sound-delay-within-0-5-ms-7-rules-that-held-up/5819
 
 ## Title
 
-Light and sound within 0.5 ms on Psychtoolbox: schedule the audio, lock the picture to a frame
+## Title
+
+Visual and auditory jitter under 1 ms, light and sound within 0.5 ms: 7 rules that held up
 
 ## Body
 
-I measure stimulus onset for MEG. A photodiode and a microphone go into an NI cDAQ with the serial trigger, all at 10 kHz. The full note, in Chinese and English, plus two example scripts, is here:
+I timestamp MEG stimuli with a photodiode, a microphone, and an NI card at 10 kHz, and I only kept the setups whose trial-to-trial jitter stayed under 1 ms. Absolute delay depends on whether the trigger is written before or after the flip, so I am not quoting those means here. Jitter and light–sound alignment are what matter for averaging. Hardware, the measurement recipe, and two example scripts are in the note:
 
 https://github.com/Echoguwy/ptb-av-timing
 
-**What the delay numbers mean.** The trigger is written first, then the stimulus is scheduled. Visual delay then tracks about one refresh: about 50 ms at 60 Hz, about 8–20 ms at 144 Hz, about 5.6 ± 0.05 ms for full-speed black/white at 240 Hz. Flip first and write the trigger afterwards, and the same rig reads about one frame smaller. That is the convention in the Bridges et al. timing mega-study (PeerJ, 2020). I am not claiming a smaller number than that paper. I am using the other clock.
+**Jitter, after the rules below.** Auditory delay went from ±20 ms to **±0.1 ms**. Visual delay jitter was **±0.1 to ±0.4 ms** at 60 Hz, **±0.2 ms** at 144 Hz, and **±0.05 ms** for full-speed black/white at 240 Hz. Before this, Windows with default settings left the auditory jitter at ±20 ms, which is not usable for averaging.
 
-**The rig that stayed stable.** A desktop, an AMD GPU from before 2020 (RX 5700 XT), Ubuntu 20.04, XOrg with Wayland off, `linux-lowlatency`, Psychtoolbox 3.0.21, MATLAB 2020b. Sound in latency class 3 with the buffer left at the device minimum. `SkipSyncTests = 0` has to pass, with no “synchronization trouble” and no “didn’t use pageflipping”. Nvidia’s proprietary driver, hybrid laptops, and Windows did not hold this. On Windows the best I could keep was about 2 ms of wander, and the sync test often failed.
-
-**What actually fixed the jitter.** PTB’s clock is fine when the script names the time. If you do not, it wanders.
-
-Audio only: fill the buffer, then start at an anchor 15 ms in the future, with `waitForStart = 0`.
-
-```matlab
-PsychPortAudio('FillBuffer', pahandle, [myBeep; myBeep]);
-[nwritten, tonset] = IOPort('Write', handle, uint8(255));
-PsychPortAudio('Start', handle, 1, tonset+0.015, 0);
-```
-
-Blocking in `Start` (`waitForStart = 1`) and writing the trigger on the next line looks clever, because the trigger then sits on the sound. In my paradigms it was the call that made the rest of the timing fall apart. I do not recommend it.
-
-A picture can change only on a frame. `PredictVisualOnsetForTime` is the anchor, and the audio has to share it. `n+0.5` frames lands mid-interval, so the flip comes out on frame `n+1` instead of slipping to `n+2`. The trigger is written after the flip, so a missed frame cannot walk the trigger-to-image interval.
-
-```matlab
-t1 = GetSecs;
-tonset = PredictVisualOnsetForTime(window, t1);
-PsychPortAudio('Start', pahandle, 1, tonset+delay, 0);
-onset = Screen('Flip', window, tonset+(n+0.5)*ifi);
-[nwritten, when] = IOPort('Write', handle, uint8(255));
-```
-
-An air tube into the shielded room adds about 10 ms, so the sound is the slow one. Push the picture N frames later until the picture is slower, then trim `audioExtraDelay` in steps of about 1 ms. At 144 Hz I sometimes got stuck one frame (about 8 ms) off, because the audio wait had overrun the flip window. Dropping to 60 Hz left enough room to trim. High refresh makes the absolute delay small and the sync fiddly.
-
-**What I measured after that trim.** On a single trial the light edge and the sound edge sit on top of each other, both about 11 ms after the trigger. The sound is a 50 ms tone. The photodiode rises slowly; the edge taken from it still meets the audio onset.
+**Light versus sound.** On a single trial the two rising edges sit on top of each other. Across about 260 trials, sound minus light (negative means the sound is slightly early) lies on the 0.1 ms sample grid, mostly between **−0.6 and −0.3 ms**, with the whole range about **0.5 ms**. The tightest run in the notes was **−0.02 ± 0.08 ms**.
 
 ![Single-trial edges](https://raw.githubusercontent.com/Echoguwy/ptb-av-timing/main/assets/fig_av_edges.png)
 
-Across about 260 trials, sound minus light (negative means the sound is slightly early) sits on the 0.1 ms sample grid. The mass is between −0.6 and −0.3 ms, a few points reach −0.1 ms, and the range is about 0.5 ms.
+![Trial-by-trial light–sound offset](https://raw.githubusercontent.com/Echoguwy/ptb-av-timing/main/assets/fig_av_offset.png)
 
-![Trial-by-trial offset](https://raw.githubusercontent.com/Echoguwy/ptb-av-timing/main/assets/fig_av_offset.png)
+The rig that produced this was a desktop, an AMD GPU from before 2020, Ubuntu 20.04 with XOrg and Wayland off, `linux-lowlatency`, PTB 3.0.21, and MATLAB. `SkipSyncTests = 0` had to pass cleanly. Nvidia proprietary drivers, laptop hybrid graphics, and Windows did not hold the jitter.
 
-Auditory delay on its own, once latency class 3 was set, was 29.2 ± 0.1 ms on the 60 Hz rig. Before that it was 49 ± 20 ms.
+Seven rules. Breaking one of them put the jitter back to ±5 ms, sometimes ±50 ms. The long version, with code, is in the repository.
 
-The repo has two examples. `examples/Image_Sound_Sync` is a still image plus a beep on this schedule. `examples/Video_Sound_Sync` is a 5 Hz half-field checkerboard movie plus a beep; the movies are short H.264 copies of the original uncompressed AVIs.
+1. **Desktop, discrete AMD GPU, Ubuntu, MATLAB or Octave.** Not a laptop iGPU, not a proprietary Nvidia driver, not Windows for a real session.
+2. **Own the sound card, and keep the buffer at the device minimum.** `PsychPortAudio('Open',[],1,3,sf,2,1)`. Only latency class 3 stayed inside 1 ms. Class 1 split into two clusters about 10 ms apart.
+3. **One screen owns the GPU, and every screen uses the same resolution and refresh.** In single-screen mode, offset drawing in X by half a screen.
+4. **Name the time for audio, and name the frame for the picture.** Fill the audio buffer, then start at a future anchor with `waitForStart = 0`. For a picture, take the anchor from `PredictVisualOnsetForTime` and flip at `tonset+(n+0.5)*ifi`, so the image lands on frame n+1 instead of slipping one more. Audio and picture share that anchor. Write the trigger after the flip, or a missed frame shows up as jitter. Do not block in `Start` (`waitForStart = 1`). It looks precise and it made the rest of the paradigm fall apart.
+5. **Warm up.** Run the script once so the mex files are loaded, then do not change folders.
+6. **Buttons are a coarser clock.** `KbWait` is about 5 ms. Loop `KbCheck` and read `deltaSecs`, or record the button on the same NI or MEG clock.
+7. **Preload video.** `PlayMovie` at the start of the trial, then a blocking `GetMovieImage`. Draw the first frame into the back buffer before scheduling it. Later frames use `onset+ifi*(holdFrames-0.5)`.
 
-I would like to know two things. Is `waitForStart = 1` considered safe in current PTB, or is the “do not block the thread” advice still right? And has the Ubuntu 24.04 pageflipping failure (the one a click in the top-right corner used to clear) actually been fixed? My survey of that is about two years old, and I have not moved a lab machine off 20.04.
+I would like to hear whether `waitForStart = 1` is considered safe in current PTB, and whether the Ubuntu 24.04 pageflipping failure is actually fixed. I have not moved a lab machine off 20.04.

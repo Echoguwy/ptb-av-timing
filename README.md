@@ -20,4 +20,4 @@ The numbers in the manual use one convention throughout: send the trigger first,
 
 Paths in both scripts are relative to the script file.
 
-A draft post for the Psychtoolbox Discourse forum is in [discourse-post.md](discourse-post.md).
+Forum thread: [Visual and auditory jitter under 1 ms](https://psychtoolbox.discourse.group/t/visual-and-auditory-jitter-under-1-ms-light-sound-delay-within-0-5-ms-7-rules-that-held-up/5819). The text that was posted is in [discourse-post.md](discourse-post.md).
