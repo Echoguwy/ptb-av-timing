@@ -139,7 +139,7 @@ HideCursor;  % must come AFTER OpenWindow
 
 ---
 
-## 4. Core algorithm: the rules that held up
+## 4. Core algorithm: seven PTB rules to memorize
 
 > These are what survived thousands of measured trials. Breaking one of them can push jitter back to ±5 ms, or to ±50 ms.
 
