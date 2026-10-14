@@ -11,6 +11,11 @@ Measured on the rig described in the manual: Ubuntu 20.04, a discrete AMD GPU, P
 
 The numbers in the manual use one convention throughout: send the trigger first, then schedule the stimulus 15 ms later. A flip-then-trigger measurement reads about one frame smaller. Compare setups only when the convention matches.
 
-## Example
+## Examples
 
-[examples/Video_Sound_Sync](examples/Video_Sound_Sync) is the Linux video–audio sync script (`Video_Sound_test_Linux_26_9_22.m`) with the two checkerboard clips and the still images it loads. Paths are relative to the script. The clips were recompressed from uncompressed 1080p AVI (~178 MB each) to H.264 CRF 12 MP4.
+| Folder | What it shows |
+|---|---|
+| [examples/Image_Sound_Sync](examples/Image_Sound_Sync) | Still image plus beep, scheduled on the same frame (`audio_visual_delay_test_Linux_25_6_13.m`) |
+| [examples/Video_Sound_Sync](examples/Video_Sound_Sync) | Checkerboard movie plus beep (`Video_Sound_test_Linux_26_9_22.m`). Clips recompressed from uncompressed 1080p AVI to H.264 CRF 12 MP4 |
+
+Paths in both scripts are relative to the script file.
