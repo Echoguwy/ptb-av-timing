@@ -1,6 +1,6 @@
 # High-Precision Audio-Visual Stimulus Presentation with PTB: Hardware–Software–Algorithm Manual
 
-> Beginner-friendly edition · Distilled from three lab records: `实验记录2024_11.docx` (Nov 2024 campaign), `操作流程.docx` (setup guide), `高刷屏幕测试/实验记录.docx` (2025 high-refresh-rate campaign).
+> Beginner-friendly edition · Distilled from long-running measurements on several rigs.
 > Goal: make the interval between "the computer says go" and "the participant really sees/hears it" **short, stable, and audio-visually aligned**.
 
 ---
@@ -18,9 +18,9 @@ sequenceDiagram
     participant D as Display / sound card / earphone
     participant S as Participant (eye/ear)
     participant N as NI acquisition card
-    P->>T: IOPort Write(255), log 'when'
+    P->>T: IOPort Write(255)
     T->>N: square-wave rising edge (t0)
-    P->>D: Flip frame / Start audio (scheduled at when+15ms)
+    P->>D: Flip frame / Start audio
     D->>S: light/sound truly arrives (t1)
     S->>N: photodiode / microphone records t1
     Note over T,N: delay = t1 - t0; must be measured and compensated
@@ -41,9 +41,11 @@ Representative results (measured):
 | Starting point (Win + defaults) | 47 ms ±1 ms | 49 ms ±20 ms | — | audio unusable |
 | Optimized 60 Hz (Ubuntu + AMD) | 44–69 ms ±0.1–0.4 ms | 29.2 ms ±0.1 ms | ±0.2 ms | passes, ready for experiments |
 | 144 Hz high-refresh | ~19→12→8 ms ±0.2 ms | ~21 ms ±0.1 ms | ±0.1 ms | faster = smaller |
-| 240 Hz (AOC / Optoma) | ~5.6 ms ±0.05 ms | — | — | full-speed B/W alternation limit |
+| 240 Hz (AOC panel / Optoma projector) | ~5.6 ms ±0.05 ms | — | — | full-speed B/W alternation limit |
 
 ![Higher refresh, smaller delay](assets/fig_refresh.png)
+
+These delays are essentially one screen refresh, because the trigger is sent before the flip. Send the trigger after the flip and the delay no longer tracks the refresh rate. The reason is in §4.
 
 ---
 
@@ -84,13 +86,13 @@ flowchart LR
 
 > Photo checklist: mic capsule faces the sound outlet (move it to the adapter-box outlet when using an air tube); photodiode face sits flush on the white patch with black tape blocking stray light; tape all cables down — one wiggle = one outlier.
 
-- **Stimulus PC**: must be a **desktop + discrete GPU**, preferably an **older AMD card** (e.g. RX 5700 XT, released ≤2020). Reason: PTB works best with open-source drivers (amdgpu/mesa); Nvidia proprietary drivers, hybrid laptop graphics and Intel iGPUs all raise sync errors.
+- **Stimulus PC**: must be a **desktop + discrete GPU**, preferably an **older AMD card** (e.g. RX 5700 XT, released before 2020, so the stock Ubuntu driver still supports it). Reason: PTB works best with open-source drivers (amdgpu/mesa); Nvidia proprietary drivers, hybrid laptop graphics and Intel iGPUs all raise sync errors.
 - **Display**: a plain 60 Hz projector works; high-refresh screens/projectors (144/240 Hz) give smaller absolute delay. Keep all screens at the same resolution, otherwise PTB sync degrades.
-- **Audio**: an **air tube** into the shielded room adds ~**10 ms** acoustic delay — compensate it. The sound card must be exclusively owned by PTB.
+- **Audio**: an **air tube** into the shielded room adds ~**10 ms** acoustic delay — compensate it. The sound card must be exclusively owned by PTB (see the code in §4).
 - **Trigger**: USB-to-serial to the Trigger Box. On Ubuntu it is `/dev/ttyUSB0`; add your user to the `dialout` group.
 - **Calibration rig** (only connected during characterization, not every session): photodiode + microphone + NI card recording `Trigger/Sound/Light` at 10 kHz. The light sensor bandwidth is ~1.75 kHz (0.2 ms fall time) — plenty; low SNR is fixed by filtering (§5).
 
-> Beginner traps: no laptops for real sessions; "mirrored" screen image breaks at fast B/W alternation; cheap esports screens flash randomly and produce outliers — AOC, ViewSonic and the Optoma 240 Hz projector measured stable, while some no-name/CFORCE panels did not.
+> Beginner traps: no laptops for real sessions; a mirrored screen image breaks up during fast black–white flicker; cheap esports panels flash at random and throw outliers. AOC panels and the ViewSonic projector were stable in these measurements; some no-name and CFORCE panels were not.
 
 ---
 
@@ -106,7 +108,7 @@ flowchart TD
     P --> C[PsychLinuxConfiguration<br/>Priority elevation]
 ```
 
-- **Pin Ubuntu 20.04**: releases after 22.04 phase out XOrg for Wayland, which PTB (unfunded) cannot follow — lots of bugs (the famous 24.04 "click the top-right corner to restore pageflipping" bug; 25.04 dual-screen looks fine but PTB sync can still fail). 20.04 + stock open-source drivers is the stable pick.
+- **Pin Ubuntu 20.04**: after 22.04 the desktop moved from XOrg toward Wayland. When I last surveyed this (about two years ago) PTB had not followed that move; it may be under development now. The bugs were real either way (the well-known 24.04 "click the top-right corner to restore pageflipping" bug; 25.04 dual-screen looks fine but PTB sync can still fail). 20.04 + the stock open-source driver is the combination that stayed stable.
 - **Key switches**:
   - Disable Secure Boot in BIOS; `WaylandEnable=false` in `/etc/gdm3/custom.conf`; launch with plain `matlab`, never `sudo matlab`.
   - `sudo apt install linux-lowlatency`.
@@ -137,45 +139,51 @@ HideCursor;  % must come AFTER OpenWindow
 
 ---
 
-## 4. Core algorithm: 12 PTB rules (memorize them)
+## 4. Core algorithm: the rules that held up
 
-> Paid for with thousands of measured trials in Nov 2024. Breaking any single rule can throw you back to ±5 ms or even ±50 ms.
+> These are what survived thousands of measured trials. Breaking one of them can push jitter back to ±5 ms, or to ±50 ms.
 
-1. **Desktop + discrete AMD GPU + Ubuntu + MATLAB/Octave**. No Nvidia-proprietary, no laptop iGPU, no Windows for real sessions (Windows best case ≈ 2 ms wobble, and SyncTest is a lottery).
-2. **Exclusive sound card, minimal buffer**: `handle=PsychPortAudio('Open',[],1,3,sf,2,1)`. The `3` is latency class 3 (lowest-latency exclusive mode); buffer size `1` auto-selects the minimum (e.g. 14). Classes `1/2/4` were all tried — only `3` holds jitter within 1 ms; class `1` splits into two delay clusters 10 ms apart (the card's high output latency).
-3. **One screen exclusively owning the GPU** (§3); remember the half-screen X offset when drawing.
-4. **`ScreenToHead` + `SkipSyncTests=0`** as a pair; try parameter values until no error is reported.
-5. **`OpenWindow` fullscreen**, `HideCursor` after it.
-6. **Schedule presentation 15 ms after Trigger** (the core formula):
-```matlab
-[nwritten, when] = IOPort('Write', handle, uint8(255));
-PsychPortAudio('Start', pahandle, 1, when+0.015, 0);
-onset = Screen('Flip', window, when+0.015);
-```
-Why 15 ms? It leaves the hardware time to respond. Note frame quantization: at 60 Hz one frame is 16.67 ms, so 15 ms lands on the next frame (≈16.67 ms), 30 ms lands on 33.3 ms — that is normal.
-7. **Warm up**: run the paradigm once before the real session (loads all mex files), then **don't change folders**; **discard the first trial** (the first few trials always wobble — an inherent MATLAB/PC trait).
-8. **No `WaitSecs`, `GetSecs` or `now` inside the trial loop**: they suspend the MATLAB thread and fight `Flip` for the CPU. Proven by injection: 38 randomly inserted `WaitSecs(0.005)` produced exactly 38–43 extra delay outliers, matching PTB's missed-deadline count. Do all timing with `Flip`'s `when` argument; `KbCheck` may stay (compatible), `KbWait` is OK, `WaitSecs('UntilTime',…)` is "a suspended sentence" — avoid if possible.
-9. **Button precision**: `KbWait` polls roughly every 5 ms; for better RT loop `KbCheck` and use `deltaSec` to bound the error; the rigorous option is routing the button signal into the NI/MEG sync acquisition.
-10. **Order! Flip first, Trigger second**: `Flip`→`IOPort Write` eliminates the "one extra frame (16.67 ms)" outliers. A paper-style `Flip`-then-`Trigger` reads one frame smaller (≈6.9 ms @144 Hz) — that is "cheating"; state your convention. This manual uses the honest **Trigger-first, scheduled presentation** convention: one frame larger but comparable.
-11. **Audio first, video second**: `Start` audio before `Flip`, otherwise audio jitter inherits the video wait. For AV sync see §6.
-12. **Video stimuli**: `PlayMovie` (pre-decode) at each trial start, then blocking `GetMovieImage(...,1,[],2)`; draw the first frame into the back buffer before scheduling; later frames with `onset+ifi*(holdFrames-0.5)` (the −0.5 lands mid-refresh so you never straddle a boundary); no decoding inside the response window.
+1. **Desktop + discrete AMD GPU + Ubuntu + MATLAB/Octave**. No Nvidia proprietary driver, no laptop iGPU, no Windows for a real session (Windows, at its best, still wandered by about 2 ms, and SyncTest was a coin toss).
+2. **Exclusive sound card, smallest buffer**: `handle=PsychPortAudio('Open',[],1,3,sf,2,1)`. The `3` is latency class 3 (lowest-latency exclusive mode). Set the buffer size to `1`; PTB raises it to the device minimum (often 14). Classes `1`, `2` and `4` were all tried. Only `3` held the jitter inside 1 ms. Class `1` split into two delay clusters 10 ms apart, which is the card's high output latency.
+3. **One screen owns the GPU, and every screen uses the same resolution and refresh** (§3). Offset drawing in X by half a screen.
+4. **Schedule the audio. Lock the picture to a frame.** PTB's clock is fine. It wanders only when you never tell it when to run. Audio can start as soon as the waveform is in the buffer, so pick a time that is **in the future** — far enough ahead that the buffer is already filled — and start there: `PsychPortAudio('Start', pahandle, 1, tonset+delay, 0)`. `tonset` is an anchor you chose; `delay` is the wait that makes the start reliable.
 
-Minimal working template (one trial):
+    Audio only, no picture. Two ways to place the anchor. Preferred:
 
-```matlab
-% init (once)
-Screen('Preference','ScreenToHead',0,1,3,0);
-Screen('Preference','SkipSyncTests',0);
-pahandle = PsychPortAudio('Open',[],1,3,sf,2,1);
-PsychPortAudio('FillBuffer', pahandle, wave);   % with class 3, stage one frequency at a time
-[win, rect] = Screen('OpenWindow', 0, black); HideCursor;
-% trial loop (no WaitSecs/GetSecs)
-Screen('FillRect', win, black); Screen('DrawTexture', win, tex);
-[nwritten, when] = IOPort('Write', h, uint8(cond));
-PsychPortAudio('Start', pahandle, 1, when+0.015, 0);
-onset = Screen('Flip', win, when+0.015);   % ≈ when+16.67ms at 60Hz
-onset = Screen('Flip', win, onset + ifi*(holdFrames-0.5));  % hold duration, no WaitSecs
-```
+    ```matlab
+    PsychPortAudio('FillBuffer', pahandle, [myBeep; myBeep]);
+    [nwritten, tonset] = IOPort('Write', handle, uint8(255)); % trigger, and take the anchor
+    PsychPortAudio('Start', handle, 1, tonset+0.015, 0);      % 15 ms later, buffer filled, time fixed
+    ```
+
+    The other way:
+
+    ```matlab
+    PsychPortAudio('FillBuffer', pahandle, [myBeep; myBeep]);
+    tonset = GetSecs;
+    PsychPortAudio('Start', handle, 1, tonset+0.015, 1); % waitForStart = 1 blocks until playback
+    IOPort('Write', handle, uint8(255));
+    ```
+
+    `waitForStart = 1` holds the thread until the sound actually starts, so a trigger written on the next line lands almost on the sound. Don't do this. Anything that sits on the thread makes the rest of the paradigm fragile. Use the first form.
+
+    A picture is stricter. Think of a metronome: the image can change only on a tick, and a tick is a `Screen('Flip')`. Knowing "now" is not enough. You also need to know where the metronome is. `PredictVisualOnsetForTime` does that. Once a picture is in the trial, the audio has to use the same anchor, because the frame grid is the tighter constraint:
+
+    ```matlab
+    t1 = GetSecs;
+    tonset = PredictVisualOnsetForTime(window, t1);              % when the next frame will show
+    PsychPortAudio('Start', pahandle1, 1, tonset+delay, 0);
+    onset = Screen('Flip', window, tonset+(n+0.5)*ifi);          % show on frame n+1
+    [nwritten, when] = IOPort('Write', handle, uint8(255));
+    ```
+
+    `ifi` is one frame (16.67 ms at 60 Hz). `n` is an integer, so `n+0.5` lands in the middle of the interval and the picture appears on frame `n+1` rather than slipping to `n+2`. Once a picture is involved, write the trigger **after** the flip. That is what stops a missed frame from showing up as a wandering trigger-to-image delay.
+
+    Audio and picture share `tonset` in this snippet, which is what makes them line up. See §6 for the offset you still have to trim.
+
+5. **Warm up.** Run the script once before the real session so the mex files are loaded, and do not change folders afterwards.
+6. **Button timing.** `KbWait` polls about every 5 ms. For a tighter reaction time, loop `KbCheck` and read `deltaSec`. Better still, record the button electrically on the same NI or MEG clock.
+7. **Preload video.** At the start of each trial, `PlayMovie` to start decoding, then block in `GetMovieImage(...,1,[],2)`. Draw the first frame into the back buffer before you schedule it. Later frames use `onset+ifi*(holdFrames-0.5)`: the `0.5` sits mid-refresh so you do not straddle a boundary. See `examples/Video_Sound_Sync`. The still-image version of the same schedule is `examples/Image_Sound_Sync`.
 
 ---
 
@@ -208,26 +216,34 @@ The hard part: vision is frame-quantized (16.67 ms steps at 60 Hz) while audio c
 ```mermaid
 flowchart TD
     A[Free run once, no compensation<br/>measure natural light-sound gap D] --> B{Who is faster?}
-    B -->|audio faster - typical w/o tube| C[Fix vision with Flip first<br/>then Start audio at visual time minus offset]
-    B -->|audio slower - air tube ~+10ms| D[Push vision back N frames via PredictVisualOnset<br/>so vision is slower, then delay audio to catch up]
-    C --> E[Tune audioExtraDelay in ±1ms steps<br/>until light-sound gap ≈ 0 ±0.2ms]
+    B -->|audio faster, usual without a tube| C[PredictVisualOnset pushes vision 1 frame later<br/>Start audio at that later time plus a trim]
+    B -->|audio slower, air tube about +10 ms| D[PredictVisualOnset pushes vision N frames later<br/>until vision is the slower one<br/>then add audio delay to catch up]
+    C --> E[Trim audioExtraDelay by ±1 ms<br/>until sound minus light is about 0 ±0.2 ms]
     D --> E
 ```
 
-Field-tested code (high-refresh / air-tube version):
+Field-tested code (high-refresh, or with an air tube):
 
 ```matlab
-t1 = GetSecs;   % anchor only, NOT called at high rate inside the loop
+t1 = GetSecs;   % an anchor, not something to call at a high rate inside the loop
 tonset = PredictVisualOnsetForTime(window, t1);
-audioWhen = tonset + ifi*5.5 + p.audioExtraDelay;  % +5.5 frames guarantees vision is later
+audioWhen = tonset + p.audioExtraDelay;
 PsychPortAudio('Start', pahandle, 1, audioWhen, 0);
-visualOnset = Screen('Flip', window, tonset + ifi*0.5);
+visualOnset = Screen('Flip', window, tonset + ifi*5.5); % 5.5 frames: vision is safely later
 [nwritten, triggerWhen] = IOPort('Write', portHandle, uint8(stimN));
 ```
 
-- The `0.5` in `ifi*5.5` keeps you off the refresh boundary so you never slip an extra frame; tune `audioExtraDelay` in ±1–2 ms steps toward `sound − light ≈ 0 ± 0.2 ms` (best lab result: `−0.02 ± 0.08 ms`).
-- If at 144 Hz you are stuck ~8 ms (one frame) off no matter what, the audio wait has outrun the Flip window — drop to 60 Hz (16.67 ms wide frames forgive a lot) and tune there. That is the trade-off: high-refresh = small delay but fiddly sync; 60 Hz = easy sync.
-- After syncing, re-validate long runs: vision peak-to-peak <1 ms, audio ±0.1 ms, AV peak-to-peak <1 ms.
+- The `0.5` in `ifi*5.5` keeps the request off a refresh boundary. Trim `audioExtraDelay` in steps of 1–2 ms until `sound − light` is about `0 ± 0.2 ms`. The tightest run in the notes was `−0.02 ± 0.08 ms`.
+- If at 144 Hz you are stuck about 8 ms off (one frame) no matter what you try, the audio wait has overrun the flip window. Drop to 60 Hz, where a frame is 16.67 ms and there is room to trim. High refresh makes the absolute delay small and the sync fiddly. 60 Hz is the easier sync.
+- After it looks aligned, repeat a long run. Pass means vision peak-to-peak under 1 ms, audio within ±0.1 ms, and the light–sound gap peak-to-peak under 1 ms.
+
+One run after that trim. On a single trial the light edge and the sound edge sit on top of each other, both about 11 ms after the trigger. The sound is a tone of about 50 ms. The photodiode rises slowly, but the edge picked off it coincides with the audio onset:
+
+![Single-trial light and sound edges](assets/fig_av_edges.png)
+
+Across trials, sound minus light. Negative means the sound is slightly early. About 260 trials, each sitting on a 0.1 ms step (10 kHz sampling). The mass is between −0.6 and −0.3 ms, a few points reach −0.1 ms, and the whole range is about 0.5 ms:
+
+![Trial-by-trial light–sound offset](assets/fig_av_offset.png)
 
 ---
 
@@ -273,4 +289,4 @@ Repeat the whole flow whenever you change screens, cables, refresh rates or PCs.
 - Statistics: drop first trial; targets: vision ±0.4 ms / audio ±0.1 ms / AV ±0.25 ms; 240 Hz full-speed reaches ±0.05 ms.
 - Yardsticks to keep in mind: air tube +10 ms; one frame = 16.67 ms @60 Hz, 6.94 ms @144 Hz, 4.17 ms @240 Hz — compensate with this ruler in hand.
 
-> Closing line: **good hardware (AMD + Ubuntu 20.04) × correct code (15 ms scheduling + no WaitSecs + audio-before-video + Trigger-after-Flip) × diligent calibration (NI 3-channel + filtering + long runs) = high temporal precision.** May your first run be stable.
+> Closing line: **good hardware (AMD + Ubuntu 20.04) × code that names the time and the frame × calibration (NI, three channels, filtering, long runs) = high temporal precision.** May your first run be stable.

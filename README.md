@@ -19,3 +19,5 @@ The numbers in the manual use one convention throughout: send the trigger first,
 | [examples/Video_Sound_Sync](examples/Video_Sound_Sync) | Checkerboard movie plus beep (`Video_Sound_test_Linux_26_9_22.m`). Clips recompressed from uncompressed 1080p AVI to H.264 CRF 12 MP4 |
 
 Paths in both scripts are relative to the script file.
+
+A draft post for the Psychtoolbox Discourse forum is in [discourse-post.md](discourse-post.md).
