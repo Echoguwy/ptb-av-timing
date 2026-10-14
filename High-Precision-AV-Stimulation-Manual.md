@@ -284,9 +284,9 @@ Repeat the whole flow whenever you change screens, cables, refresh rates or PCs.
 ## Appendix A. Parameter cheat card
 
 - Audio: `PsychPortAudio('Open',[],1,3,sf,2,1)`, `FillBuffer` before Trigger, `Start(...,when+0.015,0)` (`waitForStart=0` schedules instead of blocking).
-- Vision: `Flip(window, when+0.015)`; hold with `Flip(window, onset+ifi*(hold-0.5))`.
+- Vision: `Flip(window, onset+ifi*0.5)`; hold with `Flip(window, onset+ifi*(hold-0.5))`.
 - Sync: `PredictVisualOnsetForTime` + `ifi*5.5` + fine `audioExtraDelay`.
-- Statistics: drop first trial; targets: vision ±0.4 ms / audio ±0.1 ms / AV ±0.25 ms; 240 Hz full-speed reaches ±0.05 ms.
+- Statistics: drop first trial; targets: vision ±0.1 ms / audio ±0.1 ms / AV ±0.25 ms; 240 Hz full-speed reaches ±0.05 ms.
 - Yardsticks to keep in mind: air tube +10 ms; one frame = 16.67 ms @60 Hz, 6.94 ms @144 Hz, 4.17 ms @240 Hz — compensate with this ruler in hand.
 
 > Closing line: **good hardware (AMD + Ubuntu 20.04) × code that names the time and the frame × calibration (NI, three channels, filtering, long runs) = high temporal precision.** May your first run be stable.
