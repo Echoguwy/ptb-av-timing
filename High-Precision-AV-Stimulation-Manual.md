@@ -13,17 +13,17 @@ But in reality:
 
 ```mermaid
 sequenceDiagram
-    participant P as Stimulus program (PTB)
-    participant T as Trigger Box / serial
-    participant D as Display / sound card / earphone
-    participant S as Participant (eye/ear)
-    participant N as NI acquisition card
-    P->>T: IOPort Write(255)
-    T->>N: square-wave rising edge (t0)
-    P->>D: Flip frame / Start audio
-    D->>S: light/sound truly arrives (t1)
-    S->>N: photodiode / microphone records t1
-    Note over T,N: delay = t1 - t0; must be measured and compensated
+    participant P as StimulusProgram
+    participant T as TriggerBox
+    participant D as DisplayOrAudio
+    participant S as Participant
+    participant N as NICard
+    P->>T: IOPort Write 255
+    T->>N: square-wave rising edge, t0
+    P->>D: Flip frame or Start audio
+    D->>S: light or sound arrives, t1
+    S->>N: photodiode or microphone records t1
+    Note over T,N: delay is t1 minus t0, measure and compensate
 ```
 
 ![Delay definition](assets/fig_timing.png)
@@ -55,25 +55,25 @@ These delays are essentially one screen refresh, because the trigger is sent bef
 
 ```mermaid
 flowchart LR
-    subgraph A[Stimulation system]
-        PC[Desktop PC + discrete AMD GPU]
-        PROJ[Projector / high-refresh screen]
-        HP[Earphone / air tube]
-        TB[Trigger Box<br/>serial]
+    subgraph stim [Stimulation system]
+        PC["Desktop PC, discrete AMD GPU"]
+        PROJ["Projector or high-refresh screen"]
+        HP["Earphone or air tube"]
+        TB["Trigger Box, serial"]
         PC --> PROJ
         PC --> HP
-        PC -->|/dev/ttyUSB0| TB
+        PC -->|ttyUSB0| TB
     end
-    subgraph B[Calibration rig - only for delay measurement]
-        PD[Photodiode on white patch]
-        MIC[Microphone at earphone outlet]
-        NI[NI cDAQ9171<br/>10 kHz 3-channel sync]
+    subgraph cal [Calibration rig]
+        PD["Photodiode on white patch"]
+        MIC["Microphone at earphone"]
+        NI["NI cDAQ9171, 10 kHz, 3 ch"]
         PD --> NI
         MIC --> NI
         TB --> NI
     end
-    PROJ -.light.-> PD
-    HP -.sound.-> MIC
+    PROJ -.->|light| PD
+    HP -.->|sound| MIC
 ```
 
 ![Hardware wiring overview](assets/fig_wiring_en.png)
@@ -100,12 +100,12 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    U[Ubuntu 20.04.6 LTS] --> K[linux-lowlatency kernel]
-    K --> M[MATLAB 2020b / Octave]
-    M --> P[PTB 3.0.21 unzip + setuppsychtoolbox]
-    U --> G[Full GStreamer stack]
-    U --> X[XOrg + Wayland disabled<br/>XOrgConfCreator for screens]
-    P --> C[PsychLinuxConfiguration<br/>Priority elevation]
+    U["Ubuntu 20.04.6 LTS"] --> K["linux-lowlatency kernel"]
+    K --> M["MATLAB 2020b or Octave"]
+    M --> P["PTB 3.0.21 unzip and setup"]
+    U --> G["Full GStreamer stack"]
+    U --> X["XOrg, Wayland off, XOrgConfCreator"]
+    P --> C["PsychLinuxConfiguration, raise Priority"]
 ```
 
 - **Pin Ubuntu 20.04**: after 22.04 the desktop moved from XOrg toward Wayland. When I last surveyed this (about two years ago) PTB had not followed that move; it may be under development now. The bugs were real either way (the well-known 24.04 "click the top-right corner to restore pageflipping" bug; 25.04 dual-screen looks fine but PTB sync can still fail). 20.04 + the stock open-source driver is the combination that stayed stable.
@@ -191,12 +191,12 @@ HideCursor;  % must come AFTER OpenWindow
 
 ```mermaid
 flowchart TD
-    R[NI 3-channel sync @10kHz] --> F{Filter}
-    F -->|audio| T1[Threshold rising edge]
-    F -->|light| T2[Notch 48-52Hz + lowpass<br/>then threshold/peak]
-    T1 --> D[delay = t_stim - t_trigger]
+    R["NI 3-channel sync at 10 kHz"] --> F{Filter}
+    F -->|audio| T1["Threshold rising edge"]
+    F -->|light| T2["Notch 48-52 Hz, then lowpass, then peak"]
+    T1 --> D["delay is t stim minus t trigger"]
     T2 --> D
-    D --> S[Mean±SD + drop first trial + count outliers]
+    D --> S["Mean and SD, drop first trial, count outliers"]
 ```
 
 - **Record what**: `visual_N.txt` / `audio_N.txt` / `visual_audio_N.txt` with 3 columns Trigger/Sound/Light.
@@ -215,10 +215,10 @@ The hard part: vision is frame-quantized (16.67 ms steps at 60 Hz) while audio c
 
 ```mermaid
 flowchart TD
-    A[Free run once, no compensation<br/>measure natural light-sound gap D] --> B{Who is faster?}
-    B -->|audio faster, usual without a tube| C[PredictVisualOnset pushes vision 1 frame later<br/>Start audio at that later time plus a trim]
-    B -->|audio slower, air tube about +10 ms| D[PredictVisualOnset pushes vision N frames later<br/>until vision is the slower one<br/>then add audio delay to catch up]
-    C --> E[Trim audioExtraDelay by ±1 ms<br/>until sound minus light is about 0 ±0.2 ms]
+    A["Free run once, no compensation. Measure light-sound gap D"] --> B{Who is faster}
+    B -->|audio faster no tube| C["Push vision 1 frame later, then trim the audio start"]
+    B -->|audio slower with tube| D["Push vision N frames until it is slower, then delay audio to catch up"]
+    C --> E["Trim audioExtraDelay by 1 ms until sound minus light is near 0"]
     D --> E
 ```
 
@@ -267,14 +267,14 @@ Across trials, sound minus light. Negative means the sound is slightly early. Ab
 
 ```mermaid
 flowchart TD
-    S1[Boot Ubuntu-XOrg<br/>confirm res/refresh with xrandr] --> S2[Click top-right once - anti-pageflip bug]
-    S2 --> S3[Open MATLAB, cd to PTB folder, warm-up run]
-    S3 --> S4[Attach photodiode/mic, start NI]
-    S4 --> S5[100-trial short calibration: Mean±SD + miss count]
-    S5 -->|out of spec| T[Troubleshoot per §7]
+    S1["Boot Ubuntu XOrg, check resolution and refresh"] --> S2["Click top-right once, avoid pageflip bug"]
+    S2 --> S3["Open MATLAB in the PTB folder, warm-up run"]
+    S3 --> S4["Attach photodiode and mic, start NI"]
+    S4 --> S5["100-trial check, mean SD and miss count"]
+    S5 -->|out of spec| T["Troubleshoot, section 7"]
     T --> S5
-    S5 -->|in spec| S6[1000+ formal trials, drop first, archive]
-    S6 --> S7[Offline filter + edge stats, write report]
+    S5 -->|in spec| S6["1000 formal trials, drop first, archive"]
+    S6 --> S7["Offline filter, edge stats, write report"]
 ```
 
 Repeat the whole flow whenever you change screens, cables, refresh rates or PCs. Name captures `visual/audio/visual_audio_<N>.txt` plus `gaps_<N>.txt` (PTB-readback `when/onset`) for traceability.
